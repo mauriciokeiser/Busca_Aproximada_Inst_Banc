@@ -1,0 +1,328 @@
+Esse exercício é bem interessante porque junta várias peças importantes do ecossistema Python: consumo de API, persistência em banco, manipulação de dados e exibição amigável no terminal. Vou te dar uma visão prática de como estruturar o trabalho 8 (Busca Aproximada em Instituições Bancárias):
+
+---
+
+## 🔧 Estrutura sugerida do projeto
+
+**Diretórios e arquivos principais:**
+- `requirements.txt` → listar `requests`, `rich`, `thefuzz`, e qualquer outra dependência usada.
+- `main.py` → ponto de entrada, com `if __name__ == "__main__":`.
+- `api.py` → funções para consumir a API BrasilAPI.
+- `db.py` → funções para criar tabelas, inserir e consultar dados no SQLite.
+- `search.py` → funções que usam `thefuzz` para busca aproximada, correção e agrupamento.
+- `ui.py` → funções que usam `rich` para exibir tabelas, painéis e mensagens.
+- `utils.py` → funções auxiliares (ex: normalização de strings).
+
+---
+
+## 📦 Fluxo obrigatório
+
+1. **Ambiente virtual**  
+   ```bash
+   python -m venv venv
+   source venv/bin/activate   # Linux/Mac
+   venv\Scripts\activate      # Windows
+   pip install -r requirements.txt
+   ```
+
+2. **Consumir API**  
+   ```python
+   import requests
+
+   def get_banks():
+       url = "https://brasilapi.com.br/api/banks/v1"
+       response = requests.get(url)
+       return response.json()  # lista de dicionários
+   ```
+
+3. **Persistência com SQLite**  
+   ```python
+   import sqlite3
+
+   def init_db():
+       conn = sqlite3.connect("banks.db")
+       cur = conn.cursor()
+       cur.execute("""
+           CREATE TABLE IF NOT EXISTS banks (
+               ispb TEXT,
+               name TEXT,
+               code TEXT,
+               full_name TEXT
+           )
+       """)
+       conn.commit()
+       conn.close()
+   ```
+
+4. **Busca aproximada com `thefuzz`**  
+   ```python
+   from thefuzz import fuzz, process
+
+   def search_bank_by_name(term, banks):
+       results = process.extract(term, [b["name"] for b in banks], scorer=fuzz.token_sort_ratio, limit=5)
+       return results
+   ```
+
+5. **Exibição com `rich`**  
+   ```python
+   from rich.table import Table
+   from rich.console import Console
+
+   def show_results(results):
+       table = Table(title="Resultados da Busca")
+       table.add_column("Banco")
+       table.add_column("Score")
+       table.add_column("Código")
+
+       for name, score in results:
+           table.add_row(name, str(score), "—")
+       Console().print(table)
+   ```
+
+---
+
+## 🎯 Funcionalidades obrigatórias
+
+- **Sincronizar bancos** → baixa da API, salva no SQLite, mostra total.
+- **Busca por aproximação** → entrada de texto, retorna top 5 com score.
+- **Busca por código com tolerância** → entrada numérica, fuzzy nos códigos.
+- **Agrupar por similaridade** → compara todos os nomes e sugere grupos.
+- **Corrigir nome digitado** → sugere correção com confiança.
+
+---
+
+## ⭐ Bônus
+
+- **Autocorreção simulada** → processar lista de nomes digitados e gerar relatório.
+- **Quiz de reconhecimento** → distorcer nome e pedir palpite.
+- **Exportar dicionário de sinônimos** → salvar pares com score > 90 em `.txt`.
+
+---
+
+👉 Minha sugestão é começar pelo **fluxo básico** (API → SQLite → busca fuzzy → exibição com rich) e depois ir adicionando os menus e funcionalidades extras. Assim você garante que o esqueleto está sólido antes de expandir.
+
+Quer que eu monte um **exemplo de menu inicial** em `main.py` para você ver como ficaria a navegação entre essas opções?
+
+Sim !
+
+
+Perfeito! Aqui está um exemplo de **menu inicial** para o `main.py`, que organiza as opções e conecta com os módulos que você vai criar:
+
+```python
+# main.py
+from rich.console import Console
+from rich.panel import Panel
+from rich.prompt import Prompt
+from db import init_db
+from api import sync_banks
+from search import (
+    search_by_name,
+    search_by_code,
+    group_by_similarity,
+    correct_name
+)
+
+console = Console()
+
+def menu():
+    while True:
+        console.print(Panel("🏦 [bold cyan]Busca Aproximada em Instituições Bancárias[/bold cyan]"))
+        console.print("1 - Sincronizar bancos (API → SQLite)")
+        console.print("2 - Buscar por aproximação de nome")
+        console.print("3 - Buscar por código com tolerância")
+        console.print("4 - Agrupar por similaridade")
+        console.print("5 - Corrigir nome digitado")
+        console.print("0 - Sair")
+
+        choice = Prompt.ask("\nEscolha uma opção", choices=["1","2","3","4","5","0"])
+
+        if choice == "1":
+            sync_banks()
+        elif choice == "2":
+            term = Prompt.ask("Digite o nome ou fragmento")
+            search_by_name(term)
+        elif choice == "3":
+            code = Prompt.ask("Digite o código numérico")
+            search_by_code(code)
+        elif choice == "4":
+            group_by_similarity()
+        elif choice == "5":
+            name = Prompt.ask("Digite o nome com possíveis erros")
+            correct_name(name)
+        elif choice == "0":
+            console.print("[bold red]Saindo...[/bold red]")
+            break
+
+if __name__ == "__main__":
+    init_db()
+    menu()
+```
+
+---
+
+### 🔑 O que esse menu faz:
+- Mostra um painel inicial com título estilizado.
+- Lista as opções numeradas.
+- Usa `Prompt.ask` da **rich** para entrada do usuário.
+- Chama funções específicas de cada módulo (`api.py`, `search.py`, etc.).
+- Garante que o banco SQLite seja inicializado antes de qualquer operação.
+
+---
+
+Assim você já tem um **esqueleto navegável** e pode ir implementando cada função nos módulos correspondentes.  
+
+👉 Quer que eu te mostre também um **exemplo de implementação da função `sync_banks()`** (consumindo a API, salvando no SQLite e exibindo resumo com rich)?
+
+Sim !
+
+Ótimo! Aqui vai um exemplo bem completo da função **`sync_banks()`** que você pode colocar em `api.py`. Ela faz todo o ciclo: consulta a API, salva no SQLite e exibe um resumo com **rich**.
+
+```python
+# api.py
+import requests
+import sqlite3
+from rich.console import Console
+from rich.panel import Panel
+
+console = Console()
+
+def sync_banks():
+    url = "https://brasilapi.com.br/api/banks/v1"
+    console.print(Panel("🔄 Sincronizando bancos da BrasilAPI..."))
+
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        banks = response.json()  # lista de dicionários
+
+        conn = sqlite3.connect("banks.db")
+        cur = conn.cursor()
+
+        # Limpa tabela antes de inserir novamente
+        cur.execute("DELETE FROM banks")
+
+        for bank in banks:
+            cur.execute("""
+                INSERT INTO banks (ispb, name, code, full_name)
+                VALUES (?, ?, ?, ?)
+            """, (
+                bank.get("ispb"),
+                bank.get("name"),
+                str(bank.get("code")),
+                bank.get("fullName")
+            ))
+
+        conn.commit()
+        conn.close()
+
+        console.print(Panel.fit(
+            f"✅ Total de bancos sincronizados: [bold green]{len(banks)}[/bold green]",
+            title="Resumo"
+        ))
+
+    except requests.exceptions.RequestException as e:
+        console.print(f"[bold red]Erro ao consultar API:[/bold red] {e}")
+```
+
+---
+
+### 🔎 O que esse código faz:
+- Usa `requests.get()` para buscar os dados da **BrasilAPI**.
+- Converte a resposta em uma lista de dicionários.
+- Limpa a tabela `banks` antes de inserir (evita duplicados).
+- Insere cada banco no SQLite (`ispb`, `name`, `code`, `fullName`).
+- Exibe no terminal o total sincronizado com **rich**.
+
+---
+
+👉 Com isso, quando você escolher a opção **1 - Sincronizar bancos** no menu do `main.py`, o sistema vai baixar todos os bancos e mostrar o resumo.  
+
+Quer que eu te mostre também um exemplo da **busca por aproximação de nome (`search_by_name`)** usando `thefuzz` e exibindo os resultados em tabela com `rich`?
+
+SIM !
+
+Aqui está um exemplo de como implementar a **busca por aproximação de nome (`search_by_name`)** usando `thefuzz` e exibindo os resultados em uma tabela com **rich**. Esse código pode ficar em `search.py`:
+
+```python
+# search.py
+import sqlite3
+from thefuzz import process, fuzz
+from rich.console import Console
+from rich.table import Table
+
+console = Console()
+
+def search_by_name(term: str):
+    conn = sqlite3.connect("banks.db")
+    cur = conn.cursor()
+    cur.execute("SELECT name, code FROM banks")
+    banks = cur.fetchall()  # lista de tuplas (name, code)
+    conn.close()
+
+    # Extrai apenas os nomes para comparação
+    names = [b[0] for b in banks]
+
+    # Busca aproximada com thefuzz
+    results = process.extract(term, names, scorer=fuzz.token_sort_ratio, limit=5)
+
+    # Monta tabela com rich
+    table = Table(title=f"Resultados da busca por: {term}")
+    table.add_column("Banco", style="cyan", no_wrap=True)
+    table.add_column("Score", style="magenta")
+    table.add_column("Código", style="green")
+
+    for name, score in results:
+        # Recupera o código correspondente ao nome
+        code = next((b[1] for b in banks if b[0] == name), "—")
+        if score == 100:
+            table.add_row(f"[bold green]{name}[/bold green]", str(score), str(code))
+        else:
+            table.add_row(name, str(score), str(code))
+
+    console.print(table)
+```
+
+---
+
+### 🔎 Como funciona:
+- Consulta todos os bancos salvos no SQLite.
+- Usa `thefuzz.process.extract` para comparar o termo digitado com os nomes dos bancos.
+- Retorna os 5 mais similares com seus **scores**.
+- Exibe em uma tabela estilizada com **rich**:
+  - Nome do banco
+  - Score de similaridade (0–100)
+  - Código do banco
+- Se o score for **100**, o nome aparece destacado em verde como correspondência exata.
+
+---
+
+👉 Assim, quando você escolher a opção **2 - Buscar por aproximação de nome** no menu do `main.py`, o sistema vai pedir um termo e mostrar os resultados em tabela.
+
+Quer que eu prepare também um exemplo da **busca por código com tolerância (`search_by_code`)**, que é bem útil para lidar com typos nos números?
+
+Não !
+
+Excelente, Mauricio! Agora você já tem o **menu inicial** e a função de **sincronização dos bancos**. Com a função de **busca por nome aproximado** implementada, o fluxo principal do projeto está praticamente pronto para rodar no terminal.  
+
+O que você já tem:
+- `main.py` → menu interativo com opções.
+- `api.py` → função `sync_banks()` que consulta a BrasilAPI e salva no SQLite.
+- `search.py` → função `search_by_name()` que usa `thefuzz` e exibe resultados com `rich`.
+
+👉 Isso cobre o ciclo completo: **API → SQLite → fuzzy search → exibição estilizada**.  
+
+Se você rodar o programa agora, já consegue:
+1. Sincronizar os bancos (opção 1).
+2. Buscar por aproximação de nome (opção 2).
+
+---
+
+📌 Próximos passos que você pode implementar:
+- **Busca por código com tolerância** → fuzzy nos códigos numéricos.
+- **Agrupar por similaridade** → comparar todos os nomes e sugerir grupos.
+- **Corrigir nome digitado** → sugerir correção com confiança.
+- **Extras (bônus)** → autocorreção em lote, quiz de reconhecimento, exportar sinônimos.
+
+---
+
+Quer que eu te ajude a montar o **esqueleto das funções restantes** (`search_by_code`, `group_by_similarity`, `correct_name`) para você já ter tudo pronto e só ir preenchendo a lógica?
